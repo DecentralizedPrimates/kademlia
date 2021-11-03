@@ -3,10 +3,11 @@ import asyncio
 import sys
 
 from kademlia.network import Server
+from examples.handler_example import TestMessageHandler
 
-if len(sys.argv) != 5:
-    print("Usage: python set.py <bootstrap node> <bootstrap port> <key> <value>")
-    sys.exit(1)
+# if len(sys.argv) != 4:
+#     print("Usage: python query.py <bootstrap node> <bootstrap port> <key>")
+#     sys.exit(1)
 
 handler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -15,12 +16,15 @@ log = logging.getLogger('kademlia')
 log.addHandler(handler)
 log.setLevel(logging.DEBUG)
 
+
 async def run():
-    server = Server()
-    await server.listen(8469)
-    bootstrap_node = (sys.argv[1], int(sys.argv[2]))
+    server = Server(TestMessageHandler())
+    await server.listen(8470)
+    bootstrap_node = ("localhost", 8469)
     await server.bootstrap([bootstrap_node])
-    await server.set(sys.argv[3], sys.argv[4])
+
+    result = await server.query("aa".encode())
+    print("Get result:", result)
     server.stop()
 
 asyncio.run(run())

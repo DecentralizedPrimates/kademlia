@@ -79,7 +79,7 @@ class ValueSpiderCrawl(SpiderCrawl):
         """
         Find either the closest nodes or the value requested.
         """
-        return await self._find(self.protocol.call_find_value)
+        return await self._find(self.protocol.call_query)
 
     async def _nodes_found(self, responses):
         """
@@ -100,29 +100,11 @@ class ValueSpiderCrawl(SpiderCrawl):
         self.nearest.remove(toremove)
 
         if found_values:
-            return await self._handle_found_values(found_values)
+            return found_values
         if self.nearest.have_contacted_all():
             # not found!
             return None
         return await self.find()
-
-    async def _handle_found_values(self, values):
-        """
-        We got some values!  Exciting.  But let's make sure
-        they're all the same or freak out a little bit.  Also,
-        make sure we tell the nearest node that *didn't* have
-        the value to store it.
-        """
-        value_counts = Counter(values)
-        if len(value_counts) != 1:
-            log.warning("Got multiple values for key %i: %s",
-                        self.node.long_id, str(values))
-        value = value_counts.most_common(1)[0][0]
-
-        peer = self.nearest_without_value.popleft()
-        if peer:
-            await self.protocol.call_store(peer, self.node.id, value)
-        return value
 
 
 class NodeSpiderCrawl(SpiderCrawl):
@@ -169,10 +151,10 @@ class RPCFindResponse:
         return self.response[0]
 
     def has_value(self):
-        return isinstance(self.response[1], dict)
+        return self.response[1] is not None
 
     def get_value(self):
-        return self.response[1]['value']
+        return self.response[1]
 
     def get_node_list(self):
         """

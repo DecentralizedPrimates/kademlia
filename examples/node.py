@@ -2,6 +2,7 @@ import argparse
 import logging
 import asyncio
 
+from examples.handler_example import TestMessageHandler
 from kademlia.network import Server
 
 handler = logging.StreamHandler()
@@ -11,7 +12,7 @@ log = logging.getLogger('kademlia')
 log.addHandler(handler)
 log.setLevel(logging.DEBUG)
 
-server = Server()
+server = Server(TestMessageHandler())
 
 
 def parse_arguments():
@@ -45,7 +46,7 @@ def create_bootstrap_node():
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
 
-    loop.run_until_complete(server.listen(8468))
+    loop.run_until_complete(server.listen(8469))
 
     try:
         loop.run_forever()
@@ -58,7 +59,6 @@ def create_bootstrap_node():
 
 def main():
     args = parse_arguments()
-
     if args.ip and args.port:
         connect_to_bootstrap_node(args)
     else:
