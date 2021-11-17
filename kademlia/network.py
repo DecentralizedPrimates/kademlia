@@ -24,7 +24,7 @@ class Server:
 
     protocol_class = KademliaProtocol
 
-    def __init__(self, message_handler: MessageHandler, ksize=20, alpha=3, node_id=None):
+    def __init__(self, ksize=20, alpha=3, node_id=None):
         """
         Create a server instance.  This will start listening on the given port.
 
@@ -37,7 +37,6 @@ class Server:
         """
         self.ksize = ksize
         self.alpha = alpha
-        self.message_handler = message_handler
         self.node = Node(node_id or digest(random.getrandbits(255)))
         self.transport = None
         self.protocol = None
@@ -55,9 +54,9 @@ class Server:
             self.save_state_loop.cancel()
 
     def _create_protocol(self):
-        return self.protocol_class(self.node, self.ksize, self.message_handler)
+        return self.protocol_class(self.node, self.ksize)
 
-    async def listen(self, port, interface='0.0.0.0'):
+    async def listen(self, port, message_handler: MessageHandler, interface='0.0.0.0'):
         """
         Start listening on the given port.
 
@@ -69,6 +68,7 @@ class Server:
         log.info("Node %i listening on %s:%i",
                  self.node.long_id, interface, port)
         self.transport, self.protocol = await listen
+        self.protocol.subscribe(message_handler)
         # finally, schedule refreshing table
         self.refresh_table()
 

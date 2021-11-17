@@ -18,8 +18,8 @@ log.setLevel(logging.DEBUG)
 
 
 async def run():
-    server = Server(TestMessageHandler())
-    await server.listen(8470)
+    server = Server()
+    await server.listen(8470, TestMessageHandler())
     bootstrap_node = ("localhost", 8469)
     await server.bootstrap([bootstrap_node])
 

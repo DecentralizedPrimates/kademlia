@@ -12,7 +12,7 @@ log = logging.getLogger('kademlia')
 log.addHandler(handler)
 log.setLevel(logging.DEBUG)
 
-server = Server(TestMessageHandler())
+server = Server()
 
 
 def parse_arguments():
@@ -46,7 +46,7 @@ def create_bootstrap_node():
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
 
-    loop.run_until_complete(server.listen(8469))
+    loop.run_until_complete(server.listen(8469, TestMessageHandler()))
 
     try:
         loop.run_forever()

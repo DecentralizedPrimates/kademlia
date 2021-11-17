@@ -13,11 +13,14 @@ log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class KademliaProtocol(RPCProtocol):
-    def __init__(self, source_node, ksize, handler: MessageHandler):
+    def __init__(self, source_node, ksize):
         RPCProtocol.__init__(self)
         self.router = RoutingTable(self, ksize, source_node)
-        self.message_handler = handler
+        self.message_handler = None
         self.source_node = source_node
+
+    def subscribe(self, message_handler: MessageHandler):
+        self.message_handler = message_handler
 
     def get_refresh_ids(self):
         """
