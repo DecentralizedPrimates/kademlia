@@ -3,7 +3,7 @@ import asyncio
 import sys
 
 from kademlia.network import Server
-from examples.handler_example import TestMessageHandler
+from handler_example import TestMessageHandler
 
 # if len(sys.argv) != 4:
 #     print("Usage: python query.py <bootstrap node> <bootstrap port> <key>")

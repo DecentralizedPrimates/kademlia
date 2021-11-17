@@ -2,7 +2,7 @@ import argparse
 import logging
 import asyncio
 
-from examples.handler_example import TestMessageHandler
+from handler_example import TestMessageHandler
 from kademlia.network import Server
 
 handler = logging.StreamHandler()
