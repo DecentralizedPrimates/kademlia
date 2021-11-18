@@ -8,10 +8,9 @@ import logging
 
 from kademlia.protocol import KademliaProtocol
 from kademlia.utils import digest
-from kademlia.storage import ForgetfulStorage
 from kademlia.node import Node
-from kademlia.crawling import ValueSpiderCrawl
-from kademlia.crawling import NodeSpiderCrawl
+from kademlia.crawling import NodeSpiderCrawl, ValueSpiderCrawl
+from kademlia.handlers import MessageHandler
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -25,7 +24,7 @@ class Server:
 
     protocol_class = KademliaProtocol
 
-    def __init__(self, ksize=20, alpha=3, node_id=None, storage=None):
+    def __init__(self, ksize=20, alpha=3, node_id=None):
         """
         Create a server instance.  This will start listening on the given port.
 
@@ -38,7 +37,6 @@ class Server:
         """
         self.ksize = ksize
         self.alpha = alpha
-        self.storage = storage or ForgetfulStorage()
         self.node = Node(node_id or digest(random.getrandbits(255)))
         self.transport = None
         self.protocol = None
@@ -56,9 +54,9 @@ class Server:
             self.save_state_loop.cancel()
 
     def _create_protocol(self):
-        return self.protocol_class(self.node, self.storage, self.ksize)
+        return self.protocol_class(self.node, self.ksize)
 
-    async def listen(self, port, interface='0.0.0.0'):
+    async def listen(self, port, message_handler: MessageHandler, interface='0.0.0.0'):
         """
         Start listening on the given port.
 
@@ -70,6 +68,7 @@ class Server:
         log.info("Node %i listening on %s:%i",
                  self.node.long_id, interface, port)
         self.transport, self.protocol = await listen
+        self.protocol.subscribe(message_handler)
         # finally, schedule refreshing table
         self.refresh_table()
 
@@ -95,9 +94,9 @@ class Server:
         # do our crawling
         await asyncio.gather(*results)
 
-        # now republish keys older than one hour
-        for dkey, value in self.storage.iter_older_than(3600):
-            await self.set_digest(dkey, value)
+        # # now republish keys older than one hour
+        # for dkey, value in self.storage.iter_older_than(3600):
+        #     await self.set_digest(dkey, value)
 
     def bootstrappable_neighbors(self):
         """
@@ -133,45 +132,16 @@ class Server:
         result = await self.protocol.ping(addr, self.node.id)
         return Node(result[1], addr[0], addr[1]) if result[0] else None
 
-    async def get(self, key):
-        """
-        Get a key if the network has it.
+    async def query(self, value: bytes):
+        dkey = digest(random.getrandbits(255))
+        return await self._query(dkey, value)
 
-        Returns:
-            :class:`None` if not found, the value otherwise.
-        """
-        log.info("Looking up key %s", key)
-        dkey = digest(key)
-        # if this node has it, return it
-        if self.storage.get(dkey) is not None:
-            return self.storage.get(dkey)
-        node = Node(dkey)
-        nearest = self.protocol.router.find_neighbors(node)
-        if not nearest:
-            log.warning("There are no known neighbors to get key %s", key)
-            return None
-        spider = ValueSpiderCrawl(self.protocol, node, nearest,
-                                  self.ksize, self.alpha)
-        return await spider.find()
-
-    async def set(self, key, value):
-        """
-        Set the given string key to the given value in the network.
-        """
-        if not check_dht_value_type(value):
-            raise TypeError(
-                "Value must be of type int, float, bool, str, or bytes"
-            )
-        log.info("setting '%s' = '%s' on network", key, value)
-        dkey = digest(key)
-        return await self.set_digest(dkey, value)
-
-    async def set_digest(self, dkey, value):
+    async def _query(self, dkey, value):
         """
         Set the given SHA1 digest key (bytes) to the given value in the
         network.
         """
-        node = Node(dkey)
+        node = Node(dkey, payload=value)
 
         nearest = self.protocol.router.find_neighbors(node)
         if not nearest:
@@ -184,13 +154,10 @@ class Server:
         nodes = await spider.find()
         log.info("setting '%s' on %s", dkey.hex(), list(map(str, nodes)))
 
-        # if this node is close too, then store here as well
-        biggest = max([n.distance_to(node) for n in nodes])
-        if self.node.distance_to(node) < biggest:
-            self.storage[dkey] = value
-        results = [self.protocol.call_store(n, dkey, value) for n in nodes]
-        # return true only if at least one store call succeeded
-        return any(await asyncio.gather(*results))
+        spider = ValueSpiderCrawl(self.protocol, node, nearest,
+                                  self.ksize, self.alpha)
+
+        return await spider.find()
 
     def save_state(self, fname):
         """
@@ -243,17 +210,3 @@ class Server:
                                                fname,
                                                frequency)
 
-
-def check_dht_value_type(value):
-    """
-    Checks to see if the type of the value is a valid type for
-    placing in the dht.
-    """
-    typeset = [
-        int,
-        float,
-        bool,
-        str,
-        bytes
-    ]
-    return type(value) in typeset  # pylint: disable=unidiomatic-typecheck

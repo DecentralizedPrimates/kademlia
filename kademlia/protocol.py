@@ -7,16 +7,20 @@ from rpcudp.protocol import RPCProtocol
 from kademlia.node import Node
 from kademlia.routing import RoutingTable
 from kademlia.utils import digest
+from kademlia.handlers import MessageHandler
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class KademliaProtocol(RPCProtocol):
-    def __init__(self, source_node, storage, ksize):
+    def __init__(self, source_node, ksize):
         RPCProtocol.__init__(self)
         self.router = RoutingTable(self, ksize, source_node)
-        self.storage = storage
+        self.message_handler = None
         self.source_node = source_node
+
+    def subscribe(self, message_handler: MessageHandler):
+        self.message_handler = message_handler
 
     def get_refresh_ids(self):
         """
@@ -36,13 +40,10 @@ class KademliaProtocol(RPCProtocol):
         self.welcome_if_new(source)
         return self.source_node.id
 
-    def rpc_store(self, sender, nodeid, key, value):
+    def rpc_query(self, sender, nodeid, value: bytes):
         source = Node(nodeid, sender[0], sender[1])
         self.welcome_if_new(source)
-        log.debug("got a store request from %s, storing '%s'='%s'",
-                  sender, key.hex(), value)
-        self.storage[key] = value
-        return True
+        return self.message_handler.notify(value)
 
     def rpc_find_node(self, sender, nodeid, key):
         log.info("finding neighbors of %i in local table",
@@ -52,14 +53,6 @@ class KademliaProtocol(RPCProtocol):
         node = Node(key)
         neighbors = self.router.find_neighbors(node, exclude=source)
         return list(map(tuple, neighbors))
-
-    def rpc_find_value(self, sender, nodeid, key):
-        source = Node(nodeid, sender[0], sender[1])
-        self.welcome_if_new(source)
-        value = self.storage.get(key, None)
-        if value is None:
-            return self.rpc_find_node(sender, nodeid, key)
-        return {'value': value}
 
     async def call_find_node(self, node_to_ask, node_to_find):
         address = (node_to_ask.ip, node_to_ask.port)
@@ -78,9 +71,9 @@ class KademliaProtocol(RPCProtocol):
         result = await self.ping(address, self.source_node.id)
         return self.handle_call_response(result, node_to_ask)
 
-    async def call_store(self, node_to_ask, key, value):
+    async def call_query(self, node_to_ask, node: Node):
         address = (node_to_ask.ip, node_to_ask.port)
-        result = await self.store(address, self.source_node.id, key, value)
+        result = await self.query(address, self.source_node.id, node.payload)
         return self.handle_call_response(result, node_to_ask)
 
     def welcome_if_new(self, node):
@@ -91,26 +84,11 @@ class KademliaProtocol(RPCProtocol):
         @param node: A new node that just joined (or that we just found out
         about).
 
-        Process:
-        For each key in storage, get k closest nodes.  If newnode is closer
-        than the furtherst in that list, and the node for this server
-        is closer than the closest in that list, then store the key/value
-        on the new node (per section 2.5 of the paper)
         """
         if not self.router.is_new_node(node):
             return
 
         log.info("never seen %s before, adding to router", node)
-        for key, value in self.storage:
-            keynode = Node(digest(key))
-            neighbors = self.router.find_neighbors(keynode)
-            if neighbors:
-                last = neighbors[-1].distance_to(keynode)
-                new_node_close = node.distance_to(keynode) < last
-                first = neighbors[0].distance_to(keynode)
-                this_closest = self.source_node.distance_to(keynode) < first
-            if not neighbors or (new_node_close and this_closest):
-                asyncio.ensure_future(self.call_store(node, key, value))
         self.router.add_contact(node)
 
     def handle_call_response(self, result, node):
